@@ -2476,7 +2476,7 @@ emmip(lmer_rtdsqrt_spDh2o_BlockPlot, ~ h2o | species | Soil_depth, CIs = TRUE, t
 # Removed 1 row containing missing values or values outside the scale range (`geom_point()`).
 # This warning occurs because I removed one outlier (data.frame = absorptive_rtd_outRem).
 
-
+#### --------------------------- Corrected LMMs (supplementary variables) --------------------------- ####
 
 
 
