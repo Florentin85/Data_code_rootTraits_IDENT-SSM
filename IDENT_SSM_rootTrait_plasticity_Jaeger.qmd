@@ -1,0 +1,880 @@
+---
+title: "Young temperate tree species show fine-root trait acclimation to differences in water availability"
+description: "Data preparation and computation of absorptive fine root trait plasticity"
+author:
+  - name: "Florentin C. Jaeger"
+    affiliation: "Université du Québec à Montréal"
+    email: "jaeger.florentin_clemens@courrier.uqam.ca"
+format:
+  html:
+    toc: true  # Table of contents enabled
+    code-fold: false  # Collapsible code sections
+    code-tools: true  # Show/hide code tools
+editor: visual
+date: "2024-06-27"
+bibliography: "/home/florentin/Zotero/My Library.bib"
+theme: superhero
+---
+
+# Preparation
+## Load the libraries
+```{r}
+library(readxl)
+library(ggplot2)
+library(tidyverse)
+library(data.table)
+library(cowplot)
+library(grid)
+library(gridExtra)
+library(sjPlot)
+```
+## Load the data
+Absorptive fine root trait table from previous R script
+```{r}
+absorptive <- read.csv("absorptive.csv", stringsAsFactors = FALSE,
+                       strip.white = TRUE, na.strings = c("NA",""))
+```
+Above ground data to regress absorptive fine root trait plasticity
+over woody biomass (WBIO)
+```{r}
+above_ground <- read.csv("above_ground_fall2018.core.csv", stringsAsFactors = FALSE,
+                         strip.white = TRUE, na.strings = c("NA",""))
+```
+## Clean and organise the above ground data
+```{r}
+str(above_ground)
+```
+We can see that not all data columns have the proper format, so we need to
+adjust this for downstream analysis. In the next step we `subset` only the alive trees.
+We will replace the existing `data.frame "above_ground"`
+```{r}
+above_ground <- subset(above_ground, status6_live_dead != "dead")
+```
+Rename and factorize sp and H~2~O
+```{r}
+names(above_ground)[7] <- "species"
+
+above_ground <-
+  dplyr::mutate(above_ground,
+                species = case_when(species == "BEPA" ~ "Betula papyrifera",
+                                    species == "QURU" ~ "Quercus rubra",
+                                    species == "ACSA" ~ "Acer saccharum",
+                                    species == "LALA" ~ "Larix laricina",
+                                    species == "PIST" ~ "Pinus strobus",
+                                    species == "PIGL" ~ "Picea glauca"))
+
+above_ground$species <- factor(above_ground$species,
+                               levels = c("Betula papyrifera",
+                                          "Quercus rubra",
+                                          "Acer saccharum",
+                                          "Larix laricina",
+                                          "Pinus strobus",
+                                          "Picea glauca"))
+
+above_ground <- above_ground %>%
+  dplyr::mutate(h2o = case_when(h2o == "H" ~ "High",
+                         h2o == "L" ~ "Low")) %>%
+  dplyr::mutate(h2o = factor(h2o, levels = c("High", "Low")))
+```
+Tree height (cm) was of data type character, so we need to change it to numeric
+```{r, warning = FALSE}
+above_ground$ht_cm <- as.numeric(above_ground$ht_cm)
+```
+In order to join the above ground with the below ground table, we need a unique key.
+This key could be the combination of block and plot. The `data.frame "absorptive"`
+already has this key, so we only need to generate it for `"above_ground"`, akin to
+the concatenate function in MS Excel.
+```{r}
+above_ground$block_plot <- paste(above_ground$block,
+                                 above_ground$plot,
+                                 sep = "")
+```
+It's best to use type "character" for `join`
+```{r}
+absorptive$block_plot <- as.character(absorptive$block_plot)
+```
+## Compute means on plot level (48 plots)
+Absorptive fine roots
+```{r, message = FALSE}
+absorptive_level_plot <- absorptive %>%
+  dplyr::select(block, block_plot, species, h2o, Soil_depth, FRB_g_cm3, SRL_m_g,
+                length_aff_cm, avgdiam_mm, rootvol_aff_class_cm3, RTD_g_cm3,
+                ntips_length_n_cm, RDMC_dry_g_fresh_g, SRA_cm2_g, RLD_cm_cm3) %>%
+  group_by(species, h2o, block, block_plot) %>%
+  na.omit() %>%
+  dplyr::summarise(FRB_G_cm3 = mean (FRB_g_cm3),
+                   SRL_m_g = mean (SRL_m_g),
+                   LENGTH_aff_cm = mean (length_aff_cm),
+                   Diam_mm = mean (avgdiam_mm),
+                   Vol_aff_class_cm3 = mean (rootvol_aff_class_cm3),
+                   RTD_G_cm3 = mean (RTD_g_cm3),
+                   RBD_n_cm = mean (ntips_length_n_cm),
+                   RDMC_g_g = mean (RDMC_dry_g_fresh_g),
+                   SRA_CM2_g = mean (SRA_cm2_g),
+                   RLD_CM_cm3 = mean (RLD_cm_cm3)) %>%
+  dplyr::mutate(group = interaction(block, block_plot, species, species = "_"))
+```
+Factorize and make sure the order is correct
+```{r}
+absorptive_level_plot$species <- factor(absorptive_level_plot$species,
+                                        levels = c("Betula papyrifera",
+                                                   "Quercus rubra",
+                                                   "Acer saccharum",
+                                                   "Larix laricina",
+                                                   "Pinus strobus",
+                                                   "Picea glauca"))
+
+absorptive_level_plot$h2o <- factor(absorptive_level_plot$h2o,
+                                    levels = c("High",
+                                               "Low"))
+```
+Above ground
+```{r, message = FALSE}
+aboveground_level_plot <- above_ground %>%
+  dplyr::select(block, block_plot, species, h2o, ht_cm, lbio, agbio, wbio) %>%
+  group_by(species, h2o, block, block_plot) %>%
+  na.omit() %>%
+  dplyr::summarise(HT_cm = mean (ht_cm),
+                   LBIO = mean (lbio),
+                   AGBIO = mean (agbio),
+                   WBIO = mean (wbio)) %>%
+  dplyr::mutate(group = interaction(block, block_plot, species, species = "_"))
+```
+## Join above- and below ground
+```{r}
+absorptive_above_plot <- left_join(absorptive_level_plot,
+                                   aboveground_level_plot,
+                                   by = join_by(block_plot))
+```
+Inspect the outcome
+```{r}
+str(absorptive_above_plot)
+```
+We can remove obsolete variables (columns)
+```{r}
+absorptive_above_plot$group.x <- NULL
+absorptive_above_plot$species.y <- NULL
+absorptive_above_plot$h2o.y <- NULL
+absorptive_above_plot$block.y <- NULL
+absorptive_above_plot$group.y <- NULL
+```
+Rename variables to remove appended "x"
+```{r}
+names(absorptive_above_plot)[1] <- "species"
+names(absorptive_above_plot)[2] <- "h2o"
+names(absorptive_above_plot)[3] <- "block"
+```
+## Function to display linear model
+(LM; plasticity over WBIO)
+In the `ggplot()` figure below we will be using the function `lm_eqn` to annotate
+the plot with the regression formula.
+```{r}
+lm_eqn = function(m) {
+  l <- list(a = format(coef(m)[[1]], digits = 2),
+            b = format(abs(coef(m)[[2]]), digits = 2),
+            r2 = sprintf("%.2f", summary(m)$r.squared)); # <1>
+  if (coef(m)[[2]] >= 0)  {
+    eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2,l)
+  } else {
+    eq <- substitute(italic(y) == a - b %.% italic(x)*","~~italic(r)^2~"="~r2,l)
+  }
+  as.character(as.expression(eq));
+}
+```
+1. $R^2$ with two decimal places
+
+# Compute individual (species level) plasticity
+## Coefficient of variation
+$$
+\text{CV} = \frac{\text{STDEV}(x)}{\text{MEAN}(x)}
+$$
+The coefficient of variation (CV) is calculated on a different level than PI. That means across all 8 species values (across both H~2~O treatments, high vs. low).
+```{r}
+CVt_traits <- absorptive_above_plot %>%
+  dplyr::select(species, h2o, RLD_CM_cm3, SRL_m_g, SRA_CM2_g,
+                RTD_G_cm3, RBD_n_cm, WBIO) %>%
+  dplyr::group_by(species) %>%
+  dplyr::summarise(CVt_RLD = ((sd (RLD_CM_cm3)) / (mean (RLD_CM_cm3))),
+                   CVt_SRL = ((sd (SRL_m_g)) / (mean (SRL_m_g))),
+                   CVt_RTD = ((sd (RTD_G_cm3)) / (mean (RTD_G_cm3))),
+                   CVt_RBD = ((sd (RBD_n_cm)) / (mean (RBD_n_cm))),
+                   CVt_SRA = ((sd (SRA_CM2_g)) / (mean (SRA_CM2_g))),
+                   CVt_WBIO = ((sd (WBIO)) / (mean (WBIO))))
+```
+## PIv, CVm, and PI : CV
+Calculate the means per species and H~2~O treatment to calculate PIv, CVm, and PI : CV downstream.
+```{r, message = FALSE}
+abs_ab_means_sph2o <- absorptive_above_plot %>%
+  dplyr::select(species, h2o, RLD_CM_cm3, SRL_m_g, SRA_CM2_g,
+                RTD_G_cm3, RBD_n_cm, WBIO) %>%
+  group_by(species, h2o) %>%
+  na.omit() %>%
+  dplyr::summarise(RLD_CM_CM3 = mean (RLD_CM_cm3),
+                   SRL_M_g = mean (SRL_m_g),
+                   RTD_G_CM3 = mean (RTD_G_cm3),
+                   RBD_n_cm = mean (RBD_n_cm),
+                   SRA_CM2_G = mean (SRA_CM2_g),
+                   WBIO = mean (WBIO)) %>%
+  dplyr::mutate(group = interaction(species, h2o, species = "_"))
+```
+Calculate PIv and CVm based on means [@valladaresQuantitativeEstimationPhenotypic2006].
+```{r}
+Plast_abs_sp_traits <- abs_ab_means_sph2o %>%
+  dplyr::select(species, h2o, RLD_CM_CM3, SRL_M_g, RTD_G_CM3, RBD_n_cm,
+                SRA_CM2_G, WBIO) %>%
+  dplyr::group_by(species) %>%
+  dplyr::summarise(PIv_RLD = ((max(RLD_CM_CM3) - min(RLD_CM_CM3)) / max(RLD_CM_CM3)),
+                   PIv_SRL = ((max(SRL_M_g) - min(SRL_M_g)) / max(SRL_M_g)),
+                   PIv_RTD = ((max(RTD_G_CM3) - min(RTD_G_CM3)) / max(RTD_G_CM3)),
+                   PIv_RBD = ((max(RBD_n_cm) - min(RBD_n_cm)) / max(RBD_n_cm)),
+                   PIv_SRA = ((max(SRA_CM2_G) - min(SRA_CM2_G)) / max(SRA_CM2_G)),
+                   PIv_WBIO = ((max(WBIO) - min(WBIO)) / max(WBIO)),
+                   CVm_RLD = ((sd (RLD_CM_CM3)) / (mean (RLD_CM_CM3))),
+                   CVm_SRL = ((sd (SRL_M_g)) / (mean (SRL_M_g))),
+                   CVm_RTD = ((sd (RTD_G_CM3)) / (mean (RTD_G_CM3))),
+                   CVm_RBD = ((sd (RBD_n_cm)) / (mean (RBD_n_cm))),
+                   CVm_SRA = ((sd (SRA_CM2_G)) / (mean (SRA_CM2_G))),
+                   CVm_WBIO = ((sd (WBIO)) / (mean (WBIO))),
+                   WBIO = mean (WBIO))
+```
+Join the CVt to the PIv and CVm
+```{r}
+Plast_abs_sp_traits <- left_join(Plast_abs_sp_traits,
+                                 CVt_traits,
+                                 by = join_by(species))
+```
+Calculate the ratio of the PI to the CV:
+$$
+\frac{\text{PI}}{\text{CV}}
+$$
+[@tobnerInterspecificCoordinationIntraspecific2013]
+The individual plasticity values (per species) are just for display in the downstream
+`ggplot2` figure, not for the bootstrap itself. The plasticity values are
+calculated inside the bootstrap again.
+```{r}
+Plast_abs_sp_traits <- Plast_abs_sp_traits %>%
+  dplyr::mutate(PI_CV_RLD = (PIv_RLD / CVt_RLD),
+                PI_CV_SRL = (PIv_SRL / CVt_SRL),
+                PI_CV_RTD = (PIv_RTD / CVt_RTD),
+                PI_CV_RBD = (PIv_RBD / CVt_RBD),
+                PI_CV_SRA = (PIv_SRA / CVt_SRA),
+                PI_CV_WBIO = (PIv_WBIO / CVt_WBIO))
+```
+Add the short species labels to `"Plast_abs_sp_traits"` to display based on
+x and y coordinates in downstream `ggplot`
+```{r}
+Plast_abs_sp_traits <-
+  dplyr::mutate(Plast_abs_sp_traits,
+                 species_label = case_when(species == "Betula papyrifera" ~ "Bp",
+                                           species == "Quercus rubra" ~ "Qr",
+                                           species == "Acer saccharum" ~ "As",
+                                           species == "Larix laricina" ~ "Ll",
+                                           species == "Pinus strobus" ~ "Ps",
+                                           species == "Picea glauca" ~ "Pg"))
+```
+
+# Plasticity bootstrap traits 0-30 cm soil depth
+## Preparation for bootstrap
+splitting and pasting the `data.frame` in a list
+```{r}
+split_sp_h2o <- split(absorptive_above_plot,
+                      paste(absorptive_above_plot$species,
+                            absorptive_above_plot$h2o))
+```
+
+## Bootstrap PIv RBD over WBIO
+Define the number of iterations
+```{r}
+n <- 6000
+```
+It’s important to note that there may be minor, stochastic variations in the bootstrap results presented below compared to those in the research paper.
+```{r}
+set.seed(1)
+Boot_PIv_RBD_WBIO <- lapply(1:n, function(i){
+  PIvRBD_WBIO <- lapply(split_sp_h2o, function(j){
+    j[sample(1:nrow(j), nrow(j), replace = TRUE),]
+  })
+  combin_split_PIvRBD_WBIO <- data.table::data.table(do.call("rbind", PIvRBD_WBIO)) # <2>
+  means_RBD_WBIO = combin_split_PIvRBD_WBIO[,.(means_RBD = mean(RBD_n_cm),          # <3>
+                                               means_WBIO = mean(WBIO)),
+                                            by = .(species, h2o)]
+  means_RBD_WBIO[, PIvRBD := (max(means_RBD) - min(means_RBD)) / max(means_RBD),
+                 by = species]                                                      # <4>
+  PIv_RBD_WBIO = means_RBD_WBIO[,.(mean_means_WBIO = mean(means_WBIO),
+                                   PIvRBD = mean(PIvRBD)), by = species]
+  PIv_RBD_WBIO <- PIv_RBD_WBIO[sample(1:nrow(PIv_RBD_WBIO),
+                                      nrow(PIv_RBD_WBIO),
+                                      replace = TRUE),]                             # <5>
+  lm_boot_PIvRBDWBIO <- lm(PIvRBD ~ mean_means_WBIO, data = PIv_RBD_WBIO)
+  data.table::data.table(mean_means_WBIO = PIv_RBD_WBIO$mean_means_WBIO,
+                         species = PIv_RBD_WBIO$species,
+                         y = predict(lm_boot_PIvRBDWBIO))
+})
+```
+2. Bring the results together
+3. Compute means for each species and H~2~O treatment
+(leading comma means subset by columns) `[]` --> contains vector
+4. Compute PIv for each species. `:=` indicates a new column or updates
+(from `data.table`). Keep the mean for each species.
+5. Optionally bootstrap species before doing the regression
+
+Store the results in a `data.table`
+```{r}
+coefs_Boot_PIv_RBD_WBIO <- do.call("rbind", Boot_PIv_RBD_WBIO)
+```
+Produce the figure
+```{r, warning = FALSE, output = FALSE}
+PIv_RBD_plot <- ggplot(coefs_Boot_PIv_RBD_WBIO,
+                       aes(x = mean_means_WBIO, y = y, color = species)) +
+  geom_point(alpha = 1/10) +
+  annotate("text", x = 350, y = 0.8,
+           label = lm_eqn(lm(y ~ mean_means_WBIO, data = coefs_Boot_PIv_RBD_WBIO)),
+           color = "black", size = 7, parse = TRUE) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE, # <6>
+              aes(group = 1),
+              show.legend = FALSE) +
+  labs(x = expression(Woody ~ biomass ~ "("*g^"-1" ~ tree*")"),
+       y = expression(PIv ~ RBD ~ "("*n ~ cm^"-1"*")")) +
+  geom_label(data = Plast_abs_sp_traits, aes(x = WBIO, y = PIv_RBD,
+                                             label = species_label),
+             color = "black", size = 6) +
+  theme_bw() +
+  theme(axis.ticks = element_line(color = "grey70", linewidth = 0.2),
+        panel.grid.major = element_line(color = "grey70", linewidth = 0.2),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 21),
+        axis.text.x = element_text(size = 25),
+        axis.text.y = element_text(size = 25),
+        legend.position = "none")
+```
+6. `geom_smooth()` will give a warning. However, we can ignore this since we want
+the function to run over all species and not group by the
+color aesthetic `"species"`.
+
+Linear model to extract results
+```{r, output = FALSE}
+stats_lm_boot_PIvRBDWBIO <- lm(y ~ mean_means_WBIO, data = coefs_Boot_PIv_RBD_WBIO)
+plot(stats_lm_boot_PIvRBDWBIO)
+```
+
+```{r, output = FALSE}
+summary(stats_lm_boot_PIvRBDWBIO)
+```
+
+```{r, output = FALSE}
+anova(stats_lm_boot_PIvRBDWBIO)
+```
+## Bootstrap CVt RBD over WBIO
+```{r}
+set.seed(2)
+Boot_CVt_RBD_WBIO <- lapply(1:n, function(i){
+  CVtRBD_WBIO <- lapply(split_sp_h2o, function(j){
+    j[sample(1:nrow(j), nrow(j), replace = TRUE),]
+  })
+  combin_split_CVtRBD_WBIO <- data.table::data.table(do.call("rbind", CVtRBD_WBIO))
+  RBD_WBIO = combin_split_CVtRBD_WBIO[,.(RBD = (RBD_n_cm),
+                                         WBIO = (WBIO)),
+                                      by = .(species)]
+  RBD_WBIO[, CVtRBD := (sd(RBD) / mean(RBD)),
+           by = species]
+  CVt_RBD_WBIO = RBD_WBIO[,.(means_WBIO = mean(WBIO),                # <7>
+                             CVtRBD = mean(CVtRBD)), by = species]
+  CVt_RBD_WBIO <- CVt_RBD_WBIO[sample(1:nrow(CVt_RBD_WBIO),
+                                      nrow(CVt_RBD_WBIO),
+                                      replace = TRUE),]
+  lm_boot_CVtRBDWBIO <- lm(CVtRBD ~ means_WBIO, data = CVt_RBD_WBIO)
+  data.table::data.table(means_WBIO = CVt_RBD_WBIO$means_WBIO,
+                         species = CVt_RBD_WBIO$species,
+                         y = predict(lm_boot_CVtRBDWBIO))
+})
+```
+7. Keep the mean for each species
+```{r}
+coefs_Boot_CVt_RBD_WBIO <- do.call("rbind", Boot_CVt_RBD_WBIO)
+```
+Produce the figure
+```{r, warning = FALSE, output = FALSE}
+CVt_RBD_plot <- ggplot(coefs_Boot_CVt_RBD_WBIO,
+                       aes(x = means_WBIO, y = y, color = species)) +
+  geom_point(alpha = 1/10) +
+  annotate("text", x = 350, y = 0.7,
+           label = lm_eqn(lm(y ~ means_WBIO, data = coefs_Boot_CVt_RBD_WBIO)),
+           color = "black", size = 7, parse = TRUE) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE,
+              aes(group = 1),
+              show.legend = FALSE) +
+  labs(x = expression(Woody ~ biomass ~ "("*g^"-1" ~ tree*")"),
+       y = expression(CVt ~ RBD ~ "("*n ~ cm^"-1"*")")) +
+  geom_label(data = Plast_abs_sp_traits,
+             aes(x = WBIO, y = CVt_RBD, label = species_label),
+             color = "black", size = 6) +
+  theme_bw() +
+  theme(axis.ticks = element_line(color = "grey70", linewidth = 0.2),
+        panel.grid.major = element_line(color = "grey70", linewidth = 0.2),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 21),
+        axis.text.x = element_text(size = 25),
+        axis.text.y = element_text(size = 25),
+        legend.position = "none")
+```
+```{r, output = FALSE}
+stats_lm_boot_CVtRBDWBIO <- lm(y ~ means_WBIO, data = coefs_Boot_CVt_RBD_WBIO)
+summary(stats_lm_boot_CVtRBDWBIO)
+anova(stats_lm_boot_CVtRBDWBIO)
+```
+## Bootstrap PI : CV RBD over WBIO
+```{r, output = FALSE}
+set.seed(3)
+Boot_PIvCvt_RBD_WBIO <- lapply(1:n, function(i){
+  PIvCVtRBD_WBIO <- lapply(split_sp_h2o, function(j){
+    j[sample(1:nrow(j), nrow(j), replace = TRUE),]
+  })
+  combin_split_PIvCVtRBD_WBIO <- data.table::data.table(do.call("rbind", PIvCVtRBD_WBIO))
+  means_RBD_WBIO = combin_split_PIvCVtRBD_WBIO[,.(means_RBD = mean(RBD_n_cm),
+                                                  means_WBIO = mean(WBIO)),
+                                               by = .(species, h2o)]
+  means_RBD_WBIO[, PIvRBD := (max(means_RBD) - min(means_RBD)) / max(means_RBD),
+                 by = species]
+  means_RBD_WBIO = means_RBD_WBIO[,.(mean_means_WBIO = mean(means_WBIO),
+                                     PIvRBD = mean(PIvRBD)), by = species]
+  combin_split_PIvCVtRBD_WBIO[, CVtRBD := (sd(RBD_n_cm) / mean(RBD_n_cm)),
+                              by = species]
+  mean_CVt = unique(combin_split_PIvCVtRBD_WBIO[, c("species", "CVtRBD")]) # <8>
+  matched_data = merge(means_RBD_WBIO, mean_CVt, by = "species") # <9>
+  matched_data[, PIv_CVt_ratio := PIvRBD / CVtRBD]
+  matched_data <- matched_data[sample(1:nrow(matched_data),
+                                      nrow(matched_data),
+                                      replace = TRUE),] # <10>
+  lm_boot_PIvCVtRBDWBIO <- lm(PIv_CVt_ratio ~ mean_means_WBIO, data = matched_data)
+  data.table::data.table(mean_means_WBIO = matched_data$mean_means_WBIO,
+                         species = matched_data$species,
+                         y = predict(lm_boot_PIvCVtRBDWBIO))
+})
+```
+8. Need 6 unique values for each species, above were duplicated 8 times
+9. Match values per species
+10. Optionally bootstrap species before doing the regression
+
+Store the results in a `data.table`
+```{r}
+coefs_Boot_PIvCvt_RBD_WBIO <- do.call("rbind", Boot_PIvCvt_RBD_WBIO)
+```
+Produce the plot
+```{r, warning = FALSE, output = FALSE}
+PIvCVt_RBD_plot <- ggplot(coefs_Boot_PIvCvt_RBD_WBIO,
+                          aes(mean_means_WBIO, y, color = species)) +
+  geom_point(alpha = 1/10) +
+  annotate("text", x = 350, y = 1.8,
+           label = lm_eqn(lm(y ~ mean_means_WBIO,
+                             data = coefs_Boot_PIvCvt_RBD_WBIO)),
+           colour = "black", size = 7, parse = TRUE) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE,
+              aes(group = 1),
+              show.legend = FALSE) +
+  labs(x = expression(Woody ~ biomass ~ "("*g^"-1" ~ tree*")"),
+       y = expression(PI ~":"~ CV ~ RBD ~ "("*n ~ cm^"-1"*")")) +
+  geom_label(data = Plast_abs_sp_traits,
+             aes(x = WBIO, y = PI_CV_RBD, label = species_label),
+             color = "black",
+             size = 6) +
+  theme_bw() +
+  theme(axis.ticks = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.major = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 21),
+        axis.text.x = element_text(size = 25),
+        axis.text.y = element_text(size = 25),
+        legend.position = "none")
+```
+Fit the linear regression to extract results
+```{r, output = FALSE}
+stats_lm_boot_PIvCVtRBDWBIO <- lm(y ~ mean_means_WBIO, data = coefs_Boot_PIvCvt_RBD_WBIO)
+summary(stats_lm_boot_PIvCVtRBDWBIO)
+anova(stats_lm_boot_PIvCVtRBDWBIO)
+```
+## Bootstrap CVm RBD over WBIO
+```{r}
+set.seed(4)
+Boot_CVm_RBD_WBIO <- lapply(1:n, function(i){
+  CVmRBD_WBIO <- lapply(split_sp_h2o, function(j){
+    j[sample(1:nrow(j), nrow(j), replace = TRUE),]
+  })
+  combin_split_CVmRBD_WBIO <- data.table::data.table(do.call("rbind", CVmRBD_WBIO))
+  means_RBD_WBIO = combin_split_CVmRBD_WBIO[,.(means_RBD = mean(RBD_n_cm),
+                                               means_WBIO = mean(WBIO)),
+                                            by = .(species, h2o)]
+  means_RBD_WBIO[, CVmRBD := (sd(means_RBD) / mean(means_RBD)),
+                 by = species]
+  CVm_RBD_WBIO = means_RBD_WBIO[,.(mean_means_WBIO = mean(means_WBIO),
+                                   CVmRBD = mean(CVmRBD)), by = species]
+  CVm_RBD_WBIO <- CVm_RBD_WBIO[sample(1:nrow(CVm_RBD_WBIO),
+                                      nrow(CVm_RBD_WBIO),
+                                      replace = TRUE),]
+  lm_boot_CVmRBDWBIO <- lm(CVmRBD ~ mean_means_WBIO, data = CVm_RBD_WBIO)
+  data.table::data.table(mean_means_WBIO = CVm_RBD_WBIO$mean_means_WBIO,
+                         species = CVm_RBD_WBIO$species,
+                         y = predict(lm_boot_CVmRBDWBIO))
+})
+```
+
+```{r}
+coefs_Boot_CVm_RBD_WBIO <- do.call("rbind", Boot_CVm_RBD_WBIO)
+```
+
+```{r, warning = FALSE, output = FALSE}
+CVm_RBD_plot <- ggplot(coefs_Boot_CVm_RBD_WBIO,
+                       aes(mean_means_WBIO, y, color = species)) +
+  geom_point(alpha = 1/10) +
+  annotate("text", x = 350, y = 0.8,
+           label = lm_eqn(lm(y ~ mean_means_WBIO,
+                             data = coefs_Boot_CVm_RBD_WBIO)),
+           colour = "black", size = 7, parse = TRUE) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE,
+              aes(group = 1),
+              show.legend = FALSE) +
+  labs(x = expression(Woody ~ biomass ~ "("*g^"-1" ~ tree*")"),
+       y = expression(CVm ~ RBD ~ "("*n ~ cm^"-1"*")")) +
+  geom_label(data = Plast_abs_sp_traits,
+             aes(x = WBIO, y = CVm_RBD,
+                 label = species_label),
+             color = "black",
+             size = 6) +
+  theme_bw() +
+  theme(axis.ticks = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.major = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 21),
+        axis.text.x = element_text(size = 25),
+        axis.text.y = element_text(size = 25),
+        legend.position = "none")
+```
+```{r, output = FALSE}
+stats_lm_boot_CVmRBDWBIO <- lm(y ~ mean_means_WBIO, data = coefs_Boot_CVm_RBD_WBIO)
+summary(stats_lm_boot_CVmRBDWBIO)
+anova(stats_lm_boot_CVmRBDWBIO)
+```
+## Arrange multiplot RBD
+To display the bootstrap results in a way that does not take up too much space, we need to produce a multiplot. Again, we can ignore the `geom_smooth()` warning.
+```{r, warning = FALSE, output = FALSE, message = FALSE}
+RBD_PIvCVtCVmPICV <- cowplot::plot_grid(PIv_RBD_plot, CVt_RBD_plot,
+                                        PIvCVt_RBD_plot, CVm_RBD_plot,
+                                        labels = c("A", "B", "C", "D"),
+                                        label_size = 25,
+                                        label_fontfamily = "arial",
+                                        label_fontface = "bold",
+                                        label_colour = "black")
+```
+Create common x-axis label
+```{r}
+x.grob_wbio <- textGrob(expression(Woody ~ biomass ~ "("*g^"-1" ~ tree*")"),
+                        gp = gpar(col = "black", fontsize = 32))
+```
+Add common x-axis label and produce the multiplot. Of course, we would need to adjust the plot size accordingly to our window size.
+```{r}
+grid.arrange(arrangeGrob(RBD_PIvCVtCVmPICV, bottom = x.grob_wbio))
+```
+Overall output table for our linear models. The variables (PIv, CVt, PI:CV, and CVm) are not named in the table below. However, based on their order in the above bootstrap's, we know that: 1) PIv, 2) CVt, 3) PI:CV, 4) CVm
+```{r}
+sjPlot::tab_model(stats_lm_boot_PIvRBDWBIO, stats_lm_boot_CVtRBDWBIO,
+                  stats_lm_boot_PIvCVtRBDWBIO, stats_lm_boot_CVmRBDWBIO,
+                  digits = 4)
+```
+
+## Bootstrap PIv RLD over WBIO
+For Root length density (RLD; cm cm^-3^) we run exactly the same loop(s) as for RBD.
+```{r}
+set.seed(5)
+Boot_PIv_RLD_WBIO <- lapply(1:n, function(i){
+  PIvRLD_WBIO <- lapply(split_sp_h2o, function(j){
+    j[sample(1:nrow(j), nrow(j), replace = TRUE),]
+  })
+  combin_split_PIvRLD_WBIO <- data.table::data.table(do.call("rbind", PIvRLD_WBIO))
+  means_RLD_WBIO = combin_split_PIvRLD_WBIO[,.(means_RLD = mean(RLD_CM_cm3),
+                                               means_WBIO = mean(WBIO)),
+                                            by = .(species, h2o)]
+  means_RLD_WBIO[, PIvRLD := (max(means_RLD) - min(means_RLD)) / max(means_RLD),
+                 by = species]
+  PIv_RLD_WBIO = means_RLD_WBIO[,.(mean_means_WBIO = mean(means_WBIO),
+                                   PIvRLD = mean(PIvRLD)), by = species]
+  PIv_RLD_WBIO <- PIv_RLD_WBIO[sample(1:nrow(PIv_RLD_WBIO),
+                                      nrow(PIv_RLD_WBIO),
+                                      replace = TRUE),]
+  lm_boot_PIvRLDWBIO <- lm(PIvRLD ~ mean_means_WBIO, data = PIv_RLD_WBIO)
+  data.table::data.table(mean_means_WBIO = PIv_RLD_WBIO$mean_means_WBIO,
+                         species = PIv_RLD_WBIO$species,
+                         y = predict(lm_boot_PIvRLDWBIO))
+})
+```
+
+```{r}
+coefs_Boot_PIv_RLD_WBIO <- do.call("rbind", Boot_PIv_RLD_WBIO)
+```
+
+```{r, warning = FALSE, output = FALSE}
+PIv_RLD_plot <- ggplot(coefs_Boot_PIv_RLD_WBIO,
+                       aes(mean_means_WBIO, y, color = species)) +
+  geom_point(alpha = 1/10) +
+  annotate("text", x = 300, y = 0.8,
+           label = lm_eqn(lm(y ~ mean_means_WBIO,
+                             data = coefs_Boot_PIv_RLD_WBIO)),
+           colour = "black", size = 7, parse = TRUE) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE,
+              aes(group = 1),
+              show.legend = FALSE) +
+  labs(x = expression(Woody ~ biomass ~ "("*g^"-1" ~ tree*")"),
+       y = expression(PIv ~ RLD ~ "("*cm ~ cm^"-3"*")")) +
+  geom_label(data = Plast_abs_sp_traits,
+             aes(x = WBIO, y = PIv_RLD,
+                 label = species_label),
+             color = "black",
+             size = 6) +
+  theme_bw() +
+  theme(axis.ticks = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.major = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 25),
+        axis.text.y = element_text(size = 25),
+        legend.position = "none")
+```
+
+```{r, output = FALSE}
+stats_lm_boot_PIvRLDWBIO <- lm(y ~ mean_means_WBIO, data = coefs_Boot_PIv_RLD_WBIO)
+plot(stats_lm_boot_PIvRLDWBIO)
+summary(stats_lm_boot_PIvRLDWBIO)
+anova(stats_lm_boot_PIvRLDWBIO)
+```
+
+## Bootstrap CVt RLD over WBIO
+```{r}
+set.seed(6)
+Boot_CVt_RLD_WBIO <- lapply(1:n, function(i){
+  CVtRLD_WBIO <- lapply(split_sp_h2o, function(j){
+    j[sample(1:nrow(j), nrow(j), replace = TRUE),]
+  })
+  combin_split_CVtRLD_WBIO <- data.table::data.table(do.call("rbind", CVtRLD_WBIO))
+  RLD_WBIO = combin_split_CVtRLD_WBIO[,.(RLD = (RLD_CM_cm3),
+                                         WBIO = (WBIO)),
+                                      by = .(species)]
+  RLD_WBIO[, CVtRLD := (sd(RLD) / mean(RLD)),
+           by = species]
+  CVt_RLD_WBIO = RLD_WBIO[,.(means_WBIO = mean(WBIO),
+                             CVtRLD = mean(CVtRLD)), by = species]
+  CVt_RLD_WBIO <- CVt_RLD_WBIO[sample(1:nrow(CVt_RLD_WBIO),
+                                      nrow(CVt_RLD_WBIO),
+                                      replace = TRUE),]
+  lm_boot_CVtRLDWBIO <- lm(CVtRLD ~ means_WBIO, data = CVt_RLD_WBIO)
+  data.table::data.table(means_WBIO = CVt_RLD_WBIO$means_WBIO,
+                         species = CVt_RLD_WBIO$species,
+                         y = predict(lm_boot_CVtRLDWBIO))
+})
+```
+
+```{r}
+coefs_Boot_CVt_RLD_WBIO <- do.call("rbind", Boot_CVt_RLD_WBIO)
+```
+
+```{r, warning = FALSE, output = FALSE}
+CVt_RLD_plot <- ggplot(coefs_Boot_CVt_RLD_WBIO,
+                       aes(means_WBIO, y, color = species)) +
+  geom_point(alpha = 1/10) +
+  annotate("text", x = 280, y = 0.75,
+           label = lm_eqn(lm(y ~ means_WBIO,
+                             data = coefs_Boot_CVt_RLD_WBIO)),
+           colour = "black", size = 7, parse = TRUE) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE,
+              aes(group = 1),
+              show.legend = FALSE) +
+  labs(x = expression(Woody ~ biomass ~ "("*g^"-1" ~ tree*")"),
+       y = expression(CVt ~ RLD ~ "("*cm ~ cm^"-3"*")")) +
+  geom_label(data = Plast_abs_sp_traits,
+             aes(x = WBIO, y = CVt_RLD,
+                 label = species_label),
+             color = "black",
+             size = 6) +
+  theme_bw() +
+  theme(axis.ticks = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.major = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 25),
+        axis.text.y = element_text(size = 25),
+        legend.position = "none")
+```
+```{r, output = FALSE}
+stats_lm_boot_CVtRLDWBIO <- lm(y ~ means_WBIO, data = coefs_Boot_CVt_RLD_WBIO)
+summary(stats_lm_boot_CVtRLDWBIO)
+anova(stats_lm_boot_CVtRLDWBIO)
+```
+
+## Bootstrap PI : CV RLD over WBIO
+```{r}
+set.seed(7)
+Boot_PIvCvt_RLD_WBIO <- lapply(1:n, function(i){
+  PIvCVtRLD_WBIO <- lapply(split_sp_h2o, function(j){
+    j[sample(1:nrow(j), nrow(j), replace = TRUE),]
+  })
+  combin_split_PIvCVtRLD_WBIO <- data.table::data.table(do.call("rbind", PIvCVtRLD_WBIO))
+  means_RLD_WBIO = combin_split_PIvCVtRLD_WBIO[,.(means_RLD = mean(RLD_CM_cm3),
+                                                  means_WBIO = mean(WBIO)),
+                                               by = .(species, h2o)]
+  means_RLD_WBIO[, PIvRLD := (max(means_RLD) - min(means_RLD)) / max(means_RLD),
+                 by = species]
+  means_RLD_WBIO = means_RLD_WBIO[,.(mean_means_WBIO = mean(means_WBIO),
+                                     PIvRLD = mean(PIvRLD)), by = species]
+  combin_split_PIvCVtRLD_WBIO[, CVtRLD := (sd(RLD_CM_cm3) / mean(RLD_CM_cm3)),
+                              by = species]
+  mean_CVt = unique(combin_split_PIvCVtRLD_WBIO[, c("species", "CVtRLD")])
+  matched_data = merge(means_RLD_WBIO, mean_CVt, by = "species")
+  matched_data[, PIv_CVt_ratio := PIvRLD / CVtRLD]
+  matched_data <- matched_data[sample(1:nrow(matched_data),
+                                      nrow(matched_data),
+                                      replace = TRUE),]
+  lm_boot_PIvCVtRLDWBIO <- lm(PIv_CVt_ratio ~ mean_means_WBIO, data = matched_data)
+  data.table::data.table(mean_means_WBIO = matched_data$mean_means_WBIO,
+                         species = matched_data$species,
+                         y = predict(lm_boot_PIvCVtRLDWBIO))
+})
+```
+
+```{r}
+coefs_Boot_PIvCvt_RLD_WBIO <- do.call("rbind", Boot_PIvCvt_RLD_WBIO)
+```
+
+```{r, warning = FALSE, output = FALSE}
+PIvCVt_RLD_plot <- ggplot(coefs_Boot_PIvCvt_RLD_WBIO,
+                          aes(mean_means_WBIO, y, color = species)) +
+  geom_point(alpha = 1/10) +
+  annotate("text", x = 350, y = 1.7,
+           label = lm_eqn(lm(y ~ mean_means_WBIO,
+                             data = coefs_Boot_PIvCvt_RLD_WBIO)),
+           colour = "black", size = 7, parse = TRUE) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE,
+              aes(group = 1),
+              show.legend = FALSE) +
+  labs(x = expression(Woody ~ biomass ~ "("*g^"-1" ~ tree*")"),
+       y = expression(PI ~":"~ CV ~ RLD ~ "("*cm ~ cm^"-3"*")")) +
+  geom_label(data = Plast_abs_sp_traits,
+             aes(x = WBIO, y = PI_CV_RLD,
+                 label = species_label),
+             color = "black",
+             size = 6) +
+  theme_bw() +
+  theme(axis.ticks = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.major = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 25),
+        axis.text.y = element_text(size = 25),
+        legend.position = "none")
+```
+
+```{r, output = FALSE}
+stats_lm_boot_PIvCVtRLDWBIO <- lm(y ~ mean_means_WBIO, data = coefs_Boot_PIvCvt_RLD_WBIO)
+summary(stats_lm_boot_PIvCVtRLDWBIO)
+anova(stats_lm_boot_PIvCVtRLDWBIO)
+```
+
+## Bootstrap CVm RLD over WBIO
+```{r}
+set.seed(8)
+Boot_CVm_RLD_WBIO <- lapply(1:n, function(i){
+  CVmRLD_WBIO <- lapply(split_sp_h2o, function(j){
+    j[sample(1:nrow(j), nrow(j), replace = TRUE),]
+  })
+  combin_split_CVmRLD_WBIO <- data.table::data.table(do.call("rbind", CVmRLD_WBIO))
+  means_RLD_WBIO = combin_split_CVmRLD_WBIO[,.(means_RLD = mean(RLD_CM_cm3),
+                                               means_WBIO = mean(WBIO)),
+                                            by = .(species, h2o)]
+  means_RLD_WBIO[, CVmRLD := (sd(means_RLD) / mean(means_RLD)),
+                 by = species]
+  CVm_RLD_WBIO = means_RLD_WBIO[,.(mean_means_WBIO = mean(means_WBIO),
+                                   CVmRLD = mean(CVmRLD)), by = species]
+  CVm_RLD_WBIO <- CVm_RLD_WBIO[sample(1:nrow(CVm_RLD_WBIO),
+                                      nrow(CVm_RLD_WBIO),
+                                      replace = TRUE),]
+  lm_boot_CVmRLDWBIO <- lm(CVmRLD ~ mean_means_WBIO, data = CVm_RLD_WBIO)
+  data.table::data.table(mean_means_WBIO = CVm_RLD_WBIO$mean_means_WBIO,
+                         species = CVm_RLD_WBIO$species,
+                         y = predict(lm_boot_CVmRLDWBIO))
+})
+```
+
+```{r}
+coefs_Boot_CVm_RLD_WBIO <- do.call("rbind", Boot_CVm_RLD_WBIO)
+```
+
+```{r, warning = FALSE, output = FALSE}
+CVm_RLD_plot <- ggplot(coefs_Boot_CVm_RLD_WBIO,
+                       aes(mean_means_WBIO, y, color = species)) +
+  geom_point(alpha = 1/10) +
+  annotate("text", x = 300, y = 0.9,
+           label = lm_eqn(lm(y ~ mean_means_WBIO,
+                             data = coefs_Boot_CVm_RLD_WBIO)),
+           colour = "black", size = 7, parse = TRUE) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE,
+              aes(group = 1),
+              show.legend = FALSE) +
+  labs(x = expression(Woody ~ biomass ~ "("*g^"-1" ~ tree*")"),
+       y = expression(CVm ~ RLD ~ "("*cm ~ cm^"-3"*")")) +
+  geom_label(data = Plast_abs_sp_traits,
+             aes(x = WBIO, y = CVm_RLD,
+                 label = species_label),
+             color = "black",
+             size = 6) +
+  theme_bw() +
+  theme(axis.ticks = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.major = element_line(colour = "grey70", linewidth = 0.2),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 25),
+        axis.text.y = element_text(size = 25),
+        legend.position = "none")
+```
+```{r, output = FALSE}
+stats_lm_boot_CVmRLDWBIO <- lm(y ~ mean_means_WBIO, data = coefs_Boot_CVm_RLD_WBIO)
+summary(stats_lm_boot_CVmRLDWBIO)
+anova(stats_lm_boot_CVmRLDWBIO)
+```
+## Arrange multiplot RLD
+To display the bootstrap results in a way that does not take up too much space, we need to produce a multiplot. Again, we can ignore the `geom_smooth()` warning.
+```{r, warning = FALSE, output = FALSE, message = FALSE}
+RLD_PIvCVtCVmPICV <- cowplot::plot_grid(PIv_RLD_plot, CVt_RLD_plot,
+                                        PIvCVt_RLD_plot, CVm_RLD_plot,
+                                        labels = c("A", "B", "C", "D"),
+                                        label_size = 25,
+                                        label_fontfamily = "arial",
+                                        label_fontface = "bold",
+                                        label_colour = "black")
+```
+Create common x-axis label --> `"x.grob_wbio"` specified above!
+```{r}
+grid.arrange(arrangeGrob(RLD_PIvCVtCVmPICV, bottom = x.grob_wbio))
+```
+Overall output table for our linear models. The variables (PIv, CVt, PI:CV, and CVm) are not named in the table below. However, based on their order in the above bootstrap's, we know that: 1) PIv, 2) CVt, 3) PI:CV, 4) CVm
+```{r}
+sjPlot::tab_model(stats_lm_boot_PIvRLDWBIO, stats_lm_boot_CVtRLDWBIO,
+                  stats_lm_boot_PIvCVtRLDWBIO, stats_lm_boot_CVmRLDWBIO,
+                  digits = 4)
+```
+**We explored all the other absorptive fine root trait relationships with above ground woody biomass. None of these relationships showed strong $R^2$ values.**
+
+# Invitation for collaboration
+We welcome feedback, collaboration, and further research based on this study. If you have any questions, suggestions, or would like to collaborate on extending this work, please contact us.
+For a detailed discussion and conclusion, please refer to the main research paper.
+
+## Reproduction guidelines and further research
+
+To reproduce the analyses presented in this study:
+
+1. Download the data from [GitHUb](https://github.com/Florentin85/Data-code_rootTraits_IDENT-SSM).
+2. Clone the [code repository](https://github.com/Florentin85/Data-code_rootTraits_IDENT-SSM).
+3. Follow the instructions in the README file to set up the environment and run the analyses.
