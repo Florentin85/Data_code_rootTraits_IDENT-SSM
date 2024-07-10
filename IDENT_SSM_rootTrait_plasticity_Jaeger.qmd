@@ -875,6 +875,6 @@ For a detailed discussion and conclusion, please refer to the main research pape
 
 To reproduce the analyses presented in this study:
 
-1. Download the data from [GitHUb](https://github.com/Florentin85/Data-code_rootTraits_IDENT-SSM).
-2. Clone the [code repository](https://github.com/Florentin85/Data-code_rootTraits_IDENT-SSM).
+1. Download the data from [GitHUb](https://github.com/Florentin85/Data_code_rootTraits_IDENT-SSM).
+2. Clone the [code repository](https://github.com/Florentin85/Data_code_rootTraits_IDENT-SSM).
 3. Follow the instructions in the README file to set up the environment and run the analyses.
