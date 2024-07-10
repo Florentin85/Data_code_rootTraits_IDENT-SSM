@@ -19,7 +19,7 @@ The code and data provided in this repository are intended for research and educ
    To clone this repository, you will need Git installed on your local machine. Open your terminal or command prompt and run the following command:
 
    ```bash
-   git clone https://github.com/Florentin85/Data-code_rootTraits_IDENT-SSM.git
+   git clone https://github.com/Florentin85/Data_code_rootTraits_IDENT-SSM.git
    ```
 
 2. **Run the Analysis**:
