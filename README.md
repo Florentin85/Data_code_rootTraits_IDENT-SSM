@@ -1,17 +1,21 @@
 # Explanation of variable names for root trait data from the International Diversity Experiment Network site in Sault Ste. Marie (Ontario, Canada, IDENT-SSM)
 ## Usage
 The code and data provided in this repository are intended for research and educational purposes. If you use any part of this repository in your work, please cite the original research paper:
-@article{jaeger2024,
-  title={Title of Your Research Paper},
-  author={Jaeger, Florentin},
-  journal={Journal Name},
-  volume={Volume},
-  number={Issue},
-  pages={pages},
-  year={2024},
-  publisher={Publisher},
-  doi={10.1234/journal.5678}
+@article{jaegerYoungTemperateTree2025,
+  title = {Young Temperate Tree Species Show Fine Root Trait Acclimation to Differences in Water Availability},
+  author = {Jaeger, Florentin C. and Messier, Christian and Beyer, Friderike and Aubin, Isabelle and Parker, William C. and Handa, I. Tanya},
+  date = {2025-11-10},
+  journaltitle = {Plant and Soil},
+  shortjournal = {Plant Soil},
+  issn = {1573-5036},
+  doi = {10.1007/s11104-025-08047-5},
+  url = {https://doi.org/10.1007/s11104-025-08047-5},
+  urldate = {2025-11-11},
+  abstract = {Growing-season water availability in forests is being altered due to climate change. We examined how the magnitude and plasticity of absorptive fine root traits of six young temperate tree species responded to high versus low soil water availability over five years.},
+  langid = {english},
+  keywords = {drought,functional traits,morphology,plasticity,root architecture,root traits},
 }
+
 
 ### How to Download and Clone the Repository
 
