@@ -1,6 +1,7 @@
 # Explanation of variable names for root trait data from the International Diversity Experiment Network site in Sault Ste. Marie (Ontario, Canada, IDENT-SSM)
 ## Usage
 The code and data provided in this repository are intended for research and educational purposes. If you use any part of this repository in your work, please cite the original research paper:
+```bibtex
 @article{jaegerYoungTemperateTree2025,
   title = {Young Temperate Tree Species Show Fine Root Trait Acclimation to Differences in Water Availability},
   author = {Jaeger, Florentin C. and Messier, Christian and Beyer, Friderike and Aubin, Isabelle and Parker, William C. and Handa, I. Tanya},
@@ -15,7 +16,7 @@ The code and data provided in this repository are intended for research and educ
   langid = {english},
   keywords = {drought,functional traits,morphology,plasticity,root architecture,root traits},
 }
-
+```
 
 ### How to Download and Clone the Repository
 
